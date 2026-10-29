@@ -60,21 +60,35 @@ function registerDevice() {
 // --- 1. GESTIONE RETE P2P E CONNESSIONI ---
 async function initPeer(username) {
     let iceServers = [];
-
     try {
-        // 1. Chiediamo le credenziali alla nostra Serverless Function
         showToast("Recupero credenziali di rete...");
         const response = await fetch('/api/turn');
         
         if (response.ok) {
-            iceServers = await response.json();
+            const data = await response.json();
+            
+            // --- INIZIO_FIX: NORMALIZZAZIONE DEI DATI ---
+            // Controlliamo il formato della risposta e forziamo la creazione di un Array
+            if (Array.isArray(data)) {
+                iceServers = data; // È già un array, va bene
+            } else if (data && Array.isArray(data.iceServers)) {
+                iceServers = data.iceServers; // I dati erano annidati dentro la proprietà iceServers
+            } else if (data && typeof data === 'object') {
+                iceServers = [data]; // Era un oggetto singolo, lo avvolgiamo in un array
+            } else {
+                throw new Error("Formato credenziali sconosciuto");
+            }
+            // --- FINE FIX ---
+
+            // (Opzionale ma consigliato) Aggiungiamo sempre il server Google come piano B
+            iceServers.push({ urls: 'stun:stun.l.google.com:19302' });
+            
         } else {
-            console.warn("Impossibile recuperare i server TURN. Rete 4G potrebbe fallire.");
-            // Fallback sul server STUN base di Google se la funzione fallisce
+            console.warn("API TURN fallita, uso server di base.");
             iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
         }
     } catch (error) {
-        console.error("Errore API:", error);
+        console.error("Errore recupero TURN:", error);
         iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
     }
 
