@@ -68,12 +68,23 @@ async function initPeer(username) {
         if (response.ok) {
             const data = await response.json();
             
+            // if (Array.isArray(data)) {
+            //     iceServers = data;
+            // } else if (data && Array.isArray(data.iceServers)) {
+            //     iceServers = data.iceServers;
+            // } else if (data && typeof data === 'object') {
+            //     iceServers = [data]; 
+            // } else {
+            //     throw new Error("Formato credenziali sconosciuto");
+            // }
+
+            // ... (dentro initPeer, dopo aver ricevuto la risposta da /api/turn)
             if (Array.isArray(data)) {
-                iceServers = data;
+                iceServers = data; // Twilio invia l'array direttamente qui a volte
             } else if (data && Array.isArray(data.iceServers)) {
                 iceServers = data.iceServers;
-            } else if (data && typeof data === 'object') {
-                iceServers = [data]; 
+            } else if (data && Array.isArray(data.ice_servers)) {
+                iceServers = data.ice_servers; // <--- Gestisce il formato di Twilio (con il trattino basso)
             } else {
                 throw new Error("Formato credenziali sconosciuto");
             }
