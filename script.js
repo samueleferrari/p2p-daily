@@ -98,6 +98,7 @@ async function initPeer(username) {
 
             // Aggiungiamo sempre il server STUN di Google come rete di sicurezza
             iceServers.push({ urls: 'stun:stun.l.google.com:19302' });
+            console.log("I MIEI SERVER ICE SONO:", iceServers);
             
         } else {
             console.warn("API TURN fallita, uso server di base.");
