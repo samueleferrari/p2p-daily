@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  node_uno:
+    build: .
+    ports:
+      - "8081:80" # Accessibile via localhost:8081
+    
+  node_due:
+    build: .
+    ports:
+      - "8082:80" # Accessibile via localhost:8082
+
+  node_tre:
+    build: .
+    ports:
+      - "8083:80" # Accessibile via localhost:8083
