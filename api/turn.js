@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.METERED_API_KEY;
     
     // Inserisci qui l'URL base che ti ha dato Metered (es. tuo-nome.metered.ca)
-    const meteredDomain = "tuo-nome.metered.ca"; 
+    const meteredDomain = "p2pdaily.metered.live"; 
 
     try {
         // Il server di Vercel chiede a Metered le credenziali ICE temporanee
