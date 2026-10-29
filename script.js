@@ -89,6 +89,7 @@ async function initPeer(username) {
 
             // 2. Scartiamo tutto ciò che non ha un indirizzo valido
             iceServers = iceServers.filter(server => server.urls);
+            iceServers = iceServers.slice(0, 2);
 
             // 3. Se l'array è vuoto, significa che Metered ci ha mandato un errore
             if (iceServers.length === 0) {
@@ -126,15 +127,35 @@ async function initPeer(username) {
         setTimeout(syncFeed, 1000); 
     });
 
+    peer.on('disconnected', () => {
+        console.log("Disconnesso dal server PeerJS. Tentativo di riconnessione invisibile...");
+        peer.reconnect();
+    });
+
     peer.on('connection', (conn) => {
         setupConnection(conn);
     });
 
     peer.on('error', (err) => {
-        // ... (il resto della gestione errori rimane identico a prima)
-        console.error("Errore P2P:", err);
+        if (err.type === 'unavailable-id') {
+            // Controlliamo se avevamo già questo nome salvato in memoria
+            if (localStorage.getItem('myUsername')) {
+                showToast("Attenzione: Sei già connesso in un'altra scheda.");
+                document.getElementById('main-app-section').classList.add('hidden');
+            } else {
+                showToast("Questo username è già in uso! Scegline un altro.");
+                localStorage.removeItem('myUsername');
+                myUsername = null;
+                showRegistration();
+            }
+        } else if (err.type === 'peer-unavailable' || err.message.includes('Could not connect to peer')) {
+            // L'amico è offline in questo momento. Ignoriamo in silenzio senza mostrare errori rossi.
+            console.log("Un utente cercato è offline al momento.");
+        } else {
+            // Qualsiasi altro errore imprevisto verrà stampato normalmente
+            console.error("Errore P2P:", err);
+        }
     });
-}
 
 function setupConnection(conn) {
     connections.push(conn);
