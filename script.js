@@ -156,6 +156,7 @@ async function initPeer(username) {
             console.error("Errore P2P:", err);
         }
     });
+}
 
 function setupConnection(conn) {
     connections.push(conn);
