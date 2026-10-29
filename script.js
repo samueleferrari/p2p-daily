@@ -60,6 +60,7 @@ function registerDevice() {
 // --- 1. GESTIONE RETE P2P E CONNESSIONI ---
 async function initPeer(username) {
     let iceServers = [];
+
     try {
         showToast("Recupero credenziali di rete...");
         const response = await fetch('/api/turn');
@@ -67,20 +68,35 @@ async function initPeer(username) {
         if (response.ok) {
             const data = await response.json();
             
-            // --- INIZIO_FIX: NORMALIZZAZIONE DEI DATI ---
-            // Controlliamo il formato della risposta e forziamo la creazione di un Array
             if (Array.isArray(data)) {
-                iceServers = data; // È già un array, va bene
+                iceServers = data;
             } else if (data && Array.isArray(data.iceServers)) {
-                iceServers = data.iceServers; // I dati erano annidati dentro la proprietà iceServers
+                iceServers = data.iceServers;
             } else if (data && typeof data === 'object') {
-                iceServers = [data]; // Era un oggetto singolo, lo avvolgiamo in un array
+                iceServers = [data]; 
             } else {
                 throw new Error("Formato credenziali sconosciuto");
             }
+
+            // --- INIZIO_FIX: FILTRO DI SICUREZZA ---
+            // 1. Convertiamo vecchi formati 'url' nel nuovo standard 'urls'
+            iceServers = iceServers.map(server => {
+                if (server.url && !server.urls) {
+                    server.urls = server.url;
+                }
+                return server;
+            });
+
+            // 2. Scartiamo tutto ciò che non ha un indirizzo valido
+            iceServers = iceServers.filter(server => server.urls);
+
+            // 3. Se l'array è vuoto, significa che Metered ci ha mandato un errore
+            if (iceServers.length === 0) {
+                console.warn("Metered ha restituito un errore invece dei server:", data);
+            }
             // --- FINE FIX ---
 
-            // (Opzionale ma consigliato) Aggiungiamo sempre il server Google come piano B
+            // Aggiungiamo sempre il server STUN di Google come rete di sicurezza
             iceServers.push({ urls: 'stun:stun.l.google.com:19302' });
             
         } else {
