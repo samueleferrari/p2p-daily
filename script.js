@@ -263,30 +263,61 @@ function checkDailyPhoto() {
     }
 }
 
+// --- 4. GESTIONE FOTOCAMERA / UPLOAD CON COMPRESSIONE ---
 function handlePhotoUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    if(file.size > 5 * 1024 * 1024) {
-        showToast("Per il prototipo, usa un'immagine sotto i 5MB.");
-        return;
-    }
+    showToast("Compressione foto in corso...");
 
     const reader = new FileReader();
     reader.onload = (e) => {
-        const base64Image = e.target.result;
-        localStorage.setItem('dailyPhoto', base64Image);
-        localStorage.setItem('dailyDate', todayString);
+        // Creiamo un'immagine in memoria
+        const img = new Image();
+        img.onload = () => {
+            // Creiamo una tela invisibile per rimpicciolire l'immagine
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800; // Larghezza massima per le foto P2P
+            let width = img.width;
+            let height = img.height;
 
-        checkDailyPhoto();
-        showToast("Foto salvata! I tuoi amici la riceveranno.");
-        
-        // Se carichi la tua foto, la invii istantaneamente a chi è già collegato a te in quel momento
-        connections.forEach(conn => {
-            if (conn.open) {
-                conn.send({ type: 'photo', sender: myUsername, date: todayString, image: base64Image });
+            // Calcoliamo le nuove proporzioni
+            if (width > MAX_WIDTH) {
+                height = Math.floor(height * (MAX_WIDTH / width));
+                width = MAX_WIDTH;
             }
-        });
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // Disegniamo l'immagine rimpicciolita sulla tela
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Trasformiamo la tela in un JPEG compresso (0.7 = 70% di qualità)
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+
+            try {
+                // Salviamo l'immagine compressa nel telefono
+                localStorage.setItem('dailyPhoto', compressedBase64);
+                localStorage.setItem('dailyDate', todayString);
+
+                checkDailyPhoto();
+                showToast("Foto salvata! I tuoi amici la riceveranno.");
+                
+                // Invio a chi è connesso in questo momento
+                connections.forEach(conn => {
+                    if (conn.open) {
+                        conn.send({ type: 'photo', sender: myUsername, date: todayString, image: compressedBase64 });
+                    }
+                });
+            } catch (error) {
+                // Catturiamo eventuali errori di memoria piena del telefono
+                showToast("Errore di salvataggio: memoria piena o foto troppo grande.");
+                console.error(error);
+            }
+        };
+        img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
