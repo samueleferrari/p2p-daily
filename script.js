@@ -33,6 +33,7 @@ window.onload = () => {
         renderFriends();
         renderTimeline(); // Mostra subito le foto in memoria!
         renderRequests();
+        renderFollowers();
     } else {
         showRegistration();
     }
@@ -204,6 +205,7 @@ function setupConnection(conn) {
                 if (!allowedFollowers.includes(data.sender)) {
                     allowedFollowers.push(data.sender);
                     localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
+                    renderFollowers(); // <--- AGGIUNGI QUESTO
                 }
             }
         }
@@ -255,16 +257,19 @@ function manualAddFriend() {
 }
 
 function removeFriend(username) {
-    friends = friends.filter(f => f !== username);
+    // 1. Lo rimuovo dalla mia rubrica locale (i MIEI seguiti)
+    friends = friends.filter(f => f.id !== username);
     localStorage.setItem('p2p_friends', JSON.stringify(friends));
     
-    // (Opzionale) Elimina anche dal feed le sue foto se lo rimuovi
+    // 2. Cancello le sue foto dal mio feed
     delete feedData[username];
     localStorage.setItem('p2p_feed', JSON.stringify(feedData));
     
     renderFriends();
     renderTimeline();
-    showToast(`@${username} rimosso.`);
+    showToast(`Non segui più @${username}.`);
+    
+    // Niente più avviso di unfollow inviato sulla rete! Marco se ne accorgerà da solo.
 }
 
 function renderFriends() {
@@ -476,6 +481,7 @@ function acceptRequest(username) {
     }
     
     renderRequests();
+    renderFollowers();
     showToast(`Hai accettato @${username}`);
 
     // 3. Forzo l'invio immediato della mia foto al nuovo follower
@@ -519,6 +525,36 @@ function renderRequests() {
                 <button onclick="acceptRequest('${req}')" class="bg-black text-white px-3 py-1 rounded-lg text-xs font-bold transition">Accetta</button>
                 <button onclick="declineRequest('${req}')" class="text-gray-500 hover:text-red-500 px-2 py-1 text-xs font-bold transition">Rifiuta</button>
             </div>
+        `;
+        list.appendChild(div);
+    });
+}
+
+// --- GESTIONE FOLLOWER (CHI MI SEGUE) ---
+function removeFollower(username) {
+    // Rimuovo l'utente dalla mia whitelist (non riceverà più le mie foto)
+    allowedFollowers = allowedFollowers.filter(u => u !== username);
+    localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
+    
+    renderFollowers();
+    showToast(`Hai rimosso @${username} dai tuoi follower.`);
+}
+
+function renderFollowers() {
+    const list = document.getElementById('followers-list');
+    
+    if (allowedFollowers.length === 0) {
+        list.innerHTML = `<p class="text-sm text-gray-400">Nessuno riceve le tue foto al momento.</p>`;
+        return;
+    }
+    
+    list.innerHTML = '';
+    allowedFollowers.forEach(follower => {
+        const div = document.createElement('div');
+        div.className = "flex justify-between items-center bg-blue-50 px-4 py-3 rounded-xl border border-blue-100";
+        div.innerHTML = `
+            <span class="font-semibold text-sm text-gray-800">@${follower}</span>
+            <button onclick="removeFollower('${follower}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Rimuovi</button>
         `;
         list.appendChild(div);
     });
