@@ -67,16 +67,6 @@ async function initPeer(username) {
         
         if (response.ok) {
             const data = await response.json();
-            
-            // if (Array.isArray(data)) {
-            //     iceServers = data;
-            // } else if (data && Array.isArray(data.iceServers)) {
-            //     iceServers = data.iceServers;
-            // } else if (data && typeof data === 'object') {
-            //     iceServers = [data]; 
-            // } else {
-            //     throw new Error("Formato credenziali sconosciuto");
-            // }
 
             // ... (dentro initPeer, dopo aver ricevuto la risposta da /api/turn)
             if (Array.isArray(data)) {
@@ -318,18 +308,40 @@ function renderTimeline() {
 }
 
 // --- 4. GESTIONE FOTOCAMERA / UPLOAD (Invariata) ---
+// // Imposta qui i secondi di validità per i tuoi test (es. 60 secondi)
+const PHOTO_LIFETIME_SECONDS = 300; 
+
 function checkDailyPhoto() {
     const savedPhoto = localStorage.getItem('dailyPhoto');
-    const savedDate = localStorage.getItem('dailyDate');
+    const savedTimestamp = localStorage.getItem('photoTimestamp'); // Nuova chiave temporale
+    
     const uploadSection = document.getElementById('upload-section');
     const displaySection = document.getElementById('my-photo-display');
     const myPhotoImg = document.getElementById('my-photo-img');
 
-    if (savedPhoto && savedDate === todayString) {
+    let isValid = false;
+
+    if (savedPhoto && savedTimestamp) {
+        const now = Date.now(); // Ora attuale in millisecondi
+        const timePassedSeconds = (now - parseInt(savedTimestamp, 10)) / 1000;
+        
+        // Se il tempo trascorso è minore del limite impostato, la foto è valida
+        if (timePassedSeconds < PHOTO_LIFETIME_SECONDS) {
+            isValid = true;
+        }
+    }
+
+    if (isValid) {
+        // La foto è ancora valida
         uploadSection.classList.add('hidden');
         displaySection.classList.remove('hidden');
         myPhotoImg.src = savedPhoto;
     } else {
+        // La foto è scaduta o non esiste: puliamo la memoria e mostriamo l'upload
+        if (savedPhoto) {
+            localStorage.removeItem('dailyPhoto');
+            localStorage.removeItem('photoTimestamp');
+        }
         uploadSection.classList.remove('hidden');
         displaySection.classList.add('hidden');
     }
@@ -372,7 +384,8 @@ function handlePhotoUpload(event) {
             try {
                 // Salviamo l'immagine compressa nel telefono
                 localStorage.setItem('dailyPhoto', compressedBase64);
-                localStorage.setItem('dailyDate', todayString);
+                // localStorage.setItem('dailyDate', todayString);
+                localStorage.setItem('photoTimestamp', Date.now().toString());
 
                 checkDailyPhoto();
                 showToast("Foto salvata! I tuoi amici la riceveranno.");
