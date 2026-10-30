@@ -4,12 +4,17 @@ let myUsername = localStorage.getItem('myUsername');
 let connections = [];
 
 const todayString = new Date().toISOString().split('T')[0];
-
 // Rubrica Amici (Array di stringhe)
 let friends = JSON.parse(localStorage.getItem('p2p_friends')) || []; 
-
 // Stato del Feed Locale: { "nome_utente": { date: "...", image: "..." } }
 let feedData = JSON.parse(localStorage.getItem('p2p_feed')) || {};
+
+// --- STATO PRIVACY E PERMESSI ---
+let isPrivate = localStorage.getItem('p2p_isPrivate') === 'true';
+// Chi ha il permesso di vedere le nostre foto (Whitelist)
+let allowedFollowers = JSON.parse(localStorage.getItem('p2p_allowed')) || [];
+// Chi ha chiesto di seguirci
+let followRequests = JSON.parse(localStorage.getItem('p2p_requests')) || [];
 
 // Pulizia giornaliera: elimina dal feed locale le foto dei giorni precedenti
 for (let user in feedData) {
@@ -27,6 +32,7 @@ window.onload = () => {
         checkDailyPhoto();
         renderFriends();
         renderTimeline(); // Mostra subito le foto in memoria!
+        renderRequests();
     } else {
         showRegistration();
     }
@@ -163,42 +169,58 @@ function setupConnection(conn) {
     connections.push(conn);
 
     conn.on('open', () => {
-        // Quando il canale si apre, invio la mia foto (se c'è).
-        // Nelle reti P2P è normale trasmettere, sarà chi riceve a decidere se scartarla.
-        const savedPhoto = localStorage.getItem('dailyPhoto');
-        const savedDate = localStorage.getItem('dailyDate');
-        
-        if (savedPhoto && savedDate === todayString) {
-            conn.send({
-                type: 'photo',
-                sender: myUsername,
-                date: savedDate,
-                image: savedPhoto
-            });
+        // 1. Appena mi connetto, invio sempre una "richiesta di follow" nel caso lui sia privato
+        conn.send({ type: 'follow_request', sender: myUsername });
+
+        // 2. Controllo se devo inviargli la mia foto
+        const validPhoto = getValidPhoto();
+        if (validPhoto) {
+            // Invia se: sono pubblico OPPURE se l'utente è nella mia Whitelist
+            if (!isPrivate || allowedFollowers.includes(conn.peer)) {
+                conn.send({
+                    type: 'photo',
+                    sender: myUsername,
+                    timestamp: Date.now(), // Usiamo il timestamp invece di todayString
+                    image: validPhoto
+                });
+            }
         }
     });
 
     conn.on('data', (data) => {
-        // Abbiamo ricevuto una foto
-        if (data.type === 'photo' && data.date === todayString) {
-            
-            // --- INIZIO NUOVO CONTROLLO (IL "BUTTAFUORI") ---
-            // Se il mittente NON è nella mia rubrica amici, ignoro il pacchetto
+        // GESTIONE RICHIESTE DI FOLLOW
+        if (data.type === 'follow_request') {
+            if (isPrivate) {
+                // Sono privato: se non è già approvato e non ha già fatto richiesta, lo metto in coda
+                if (!allowedFollowers.includes(data.sender) && !followRequests.includes(data.sender)) {
+                    followRequests.push(data.sender);
+                    localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
+                    renderRequests();
+                    showToast(`Nuova richiesta di amicizia da @${data.sender}!`);
+                }
+            } else {
+                // Sono pubblico: approvo tutti automaticamente silenziamente. 
+                // Se non ce l'ho in whitelist, lo aggiungo.
+                if (!allowedFollowers.includes(data.sender)) {
+                    allowedFollowers.push(data.sender);
+                    localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
+                }
+            }
+        }
+
+        // GESTIONE RICEZIONE FOTO
+        if (data.type === 'photo') {
+            // Il MIO buttafuori: accetto la foto solo se IO seguo questa persona
             if (!friends.includes(data.sender)) {
                 console.log(`Foto scartata: @${data.sender} non è nei tuoi amici.`);
-                return; // Esco immediatamente dalla funzione
+                return; 
             }
-            // --- FINE NUOVO CONTROLLO ---
 
-            // Se arriviamo qui, l'utente è un amico. Salviamo la foto!
             feedData[data.sender] = {
-                date: data.date,
+                timestamp: data.timestamp,
                 image: data.image
             };
-            
-            // Persistenza: salviamo sul telefono
             localStorage.setItem('p2p_feed', JSON.stringify(feedData));
-            
             showToast(`Nuova foto da @${data.sender}!`);
             renderTimeline(); 
         }
@@ -347,6 +369,19 @@ function checkDailyPhoto() {
     }
 }
 
+function getValidPhoto() {
+    const savedPhoto = localStorage.getItem('dailyPhoto');
+    const savedTimestamp = localStorage.getItem('photoTimestamp');
+    
+    if (!savedPhoto || !savedTimestamp) return null;
+    
+    const timePassedSeconds = (Date.now() - parseInt(savedTimestamp, 10)) / 1000;
+    if (timePassedSeconds < PHOTO_LIFETIME_SECONDS) {
+        return savedPhoto;
+    }
+    return null;
+}
+
 // --- 4. GESTIONE FOTOCAMERA / UPLOAD CON COMPRESSIONE ---
 function handlePhotoUpload(event) {
     const file = event.target.files[0];
@@ -418,4 +453,73 @@ function showToast(message) {
     toastTimeout = setTimeout(() => {
         toast.style.opacity = '0';
     }, 3000);
+}
+
+
+// --- GESTIONE PRIVACY E RICHIESTE ---
+function togglePrivacy() {
+    isPrivate = document.getElementById('privacy-toggle').checked;
+    localStorage.setItem('p2p_isPrivate', isPrivate);
+    renderRequests();
+    showToast(isPrivate ? "Account reso Privato" : "Account reso Pubblico");
+}
+
+function acceptRequest(username) {
+    // 1. Lo rimuovo dalle richieste in sospeso
+    followRequests = followRequests.filter(u => u !== username);
+    localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
+    
+    // 2. Lo aggiungo alla Whitelist
+    if (!allowedFollowers.includes(username)) {
+        allowedFollowers.push(username);
+        localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
+    }
+    
+    renderRequests();
+    showToast(`Hai accettato @${username}`);
+
+    // 3. Forzo l'invio immediato della mia foto al nuovo follower
+    const validPhoto = getValidPhoto();
+    if (validPhoto) {
+        const conn = peer.connect(username);
+        conn.on('open', () => {
+            conn.send({ type: 'photo', sender: myUsername, timestamp: Date.now(), image: validPhoto });
+        });
+    }
+}
+
+function declineRequest(username) {
+    followRequests = followRequests.filter(u => u !== username);
+    localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
+    renderRequests();
+}
+
+function renderRequests() {
+    const section = document.getElementById('requests-section');
+    const list = document.getElementById('requests-list');
+    
+    // Imposta lo stato iniziale del bottone toggle
+    const toggleBtn = document.getElementById('privacy-toggle');
+    if (toggleBtn) toggleBtn.checked = isPrivate;
+
+    if (!isPrivate || followRequests.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    section.classList.remove('hidden');
+    list.innerHTML = '';
+    
+    followRequests.forEach(req => {
+        const div = document.createElement('div');
+        div.className = "flex justify-between items-center bg-orange-50 px-4 py-3 rounded-xl border border-orange-100";
+        div.innerHTML = `
+            <span class="font-semibold text-sm text-gray-800">@${req}</span>
+            <div class="flex gap-2">
+                <button onclick="acceptRequest('${req}')" class="bg-black text-white px-3 py-1 rounded-lg text-xs font-bold transition">Accetta</button>
+                <button onclick="declineRequest('${req}')" class="text-gray-500 hover:text-red-500 px-2 py-1 text-xs font-bold transition">Rifiuta</button>
+            </div>
+        `;
+        list.appendChild(div);
+    });
 }
