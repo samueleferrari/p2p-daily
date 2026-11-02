@@ -185,8 +185,10 @@ function setupConnection(conn) {
 
     conn.on('open', () => {
         // 1. Controllo se io voglio seguire lui, e in tal caso mando la richiesta
-        const wantsToFollow = friends.some(f => f.id === conn.peer);
-        if (wantsToFollow) {
+        const myFriendRecord = friends.find(f => f.id === conn.peer);
+        
+        // Mando la richiesta di follow SOLO se sono ancora in attesa (pending)
+        if (myFriendRecord && myFriendRecord.status === 'pending') {
             conn.send({ type: 'follow_request', sender: myUsername });
         }
 
@@ -363,11 +365,19 @@ function renderFriends() {
 // --- 3. GESTIONE FEED E SINCRONIZZAZIONE ---
 function syncFeed() {
     if (friends.length === 0) return;
-    showToast("Ricerca foto in background...");
+    showToast("Sincronizzazione in corso...");
+    
+    // Se per caso siamo disconnessi, proviamo a rientrare prima di cercare
+    if (peer.disconnected) {
+        peer.reconnect();
+    }
     
     friends.forEach(friend => {
-        const conn = peer.connect(friend); // Crea la connessione
-        setupConnection(conn); // <-- LA RIGA MANCANTE: Mette l'app in ascolto per i dati in arrivo!
+        // CORREZIONE VITALE: Usiamo friend.id, non tutto l'oggetto!
+        if (friend && friend.id) {
+            const conn = peer.connect(friend.id); 
+            setupConnection(conn); 
+        }
     });
 }
 
