@@ -124,8 +124,12 @@ async function initPeer(username) {
             iceServers: iceServers
         }
     });
+    
+    let reconnectTimeout = 3000; // Timer dinamico che aumenterà se il server fa i capricci
+    let isReconnecting = false;
 
     peer.on('open', (id) => {
+        reconnectTimeout = 3000; // Resettiamo il timer se la connessione ha successo
         localStorage.setItem('myUsername', id);
         document.getElementById('my-peer-id').textContent = id;
         showMainApp();
@@ -135,23 +139,20 @@ async function initPeer(username) {
         setTimeout(syncFeed, 1000); 
     });
 
-    let isReconnecting = false;
-
     peer.on('disconnected', () => {
-        // Evitiamo di far partire mille tentativi contemporaneamente
-        if (isReconnecting) return;
+        if (isReconnecting || peer.destroyed) return;
         
         isReconnecting = true;
-        console.log("Disconnesso dal server PeerJS. Attendo 3 secondi prima di ricollegarmi...");
+        console.log(`Disconnesso dal server. Riprovo tra ${reconnectTimeout / 1000} secondi...`);
         
-        // Aspettiamo 3 secondi prima di riprovare per evitare un loop infinito
         setTimeout(() => {
-            if (peer.disconnected) {
-                console.log("Tentativo di riconnessione in corso...");
+            if (peer.disconnected && !peer.destroyed) {
                 peer.reconnect();
+                // Se fallisce, la prossima volta aspetterà 2 secondi in più (massimo 15 sec)
+                reconnectTimeout = Math.min(reconnectTimeout + 2000, 15000);
             }
             isReconnecting = false;
-        }, 3000);
+        }, reconnectTimeout);
     });
 
     peer.on('connection', (conn) => {
@@ -160,7 +161,6 @@ async function initPeer(username) {
 
     peer.on('error', (err) => {
         if (err.type === 'unavailable-id') {
-            // Controlliamo se avevamo già questo nome salvato in memoria
             if (localStorage.getItem('myUsername')) {
                 showToast("Attenzione: Sei già connesso in un'altra scheda.");
                 document.getElementById('main-app-section').classList.add('hidden');
@@ -171,10 +171,12 @@ async function initPeer(username) {
                 showRegistration();
             }
         } else if (err.type === 'peer-unavailable' || err.message.includes('Could not connect to peer')) {
-            // L'amico è offline in questo momento. Ignoriamo in silenzio senza mostrare errori rossi.
             console.log("Un utente cercato è offline al momento.");
+        } else if (err.type === 'network' || err.type === 'server-error' || err.message.includes('Lost connection')) {
+            // IL SERVER CI HA BUTTATO FUORI. Silenziamo l'errore rosso.
+            // Ci pensa l'evento 'disconnected' qui sopra a farci ricollegare in pace.
+            console.warn("Avviso di rete: micro-disconnessione dal server centrale gestita in background.");
         } else {
-            // Qualsiasi altro errore imprevisto verrà stampato normalmente
             console.error("Errore P2P:", err);
         }
     });
@@ -365,15 +367,22 @@ function renderFriends() {
 // --- 3. GESTIONE FEED E SINCRONIZZAZIONE ---
 function syncFeed() {
     if (friends.length === 0) return;
+    
+    // CORREZIONE VITALE: Se siamo disconnessi, proviamo a rientrare MA CI FERMIAMO QUI
+    if (peer.disconnected) {
+        showToast("Rete instabile. Riconnessione in corso...");
+        peer.reconnect();
+        return; // <-- IL SEGRETO È QUESTO RETURN. Impedisce al codice di cercare gli amici schiantando l'app!
+    }
+
+    if (peer.destroyed) {
+        showToast("Connessione persa definitivamente. Ricarica la pagina.");
+        return;
+    }
+
     showToast("Sincronizzazione in corso...");
     
-    // Se per caso siamo disconnessi, proviamo a rientrare prima di cercare
-    if (peer.disconnected) {
-        peer.reconnect();
-    }
-    
     friends.forEach(friend => {
-        // CORREZIONE VITALE: Usiamo friend.id, non tutto l'oggetto!
         if (friend && friend.id) {
             const conn = peer.connect(friend.id); 
             setupConnection(conn); 
