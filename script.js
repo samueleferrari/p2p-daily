@@ -5,7 +5,7 @@ let connections = [];
 
 const todayString = new Date().toISOString().split('T')[0];
 // Rubrica Amici (Array di stringhe)
-let friends = JSON.parse(localStorage.getItem('p2p_friends')) || []; 
+let friends = JSON.parse(localStorage.getItem('p2p_friends')) || [];
 // Stato del Feed Locale: { "nome_utente": { date: "...", image: "..." } }
 let feedData = JSON.parse(localStorage.getItem('p2p_feed')) || {};
 
@@ -257,34 +257,40 @@ function manualAddFriend() {
 }
 
 function removeFriend(username) {
-    // 1. Lo rimuovo dalla mia rubrica locale (i MIEI seguiti)
+    // Filtra rigorosamente usando l'id dell'oggetto
     friends = friends.filter(f => f.id !== username);
     localStorage.setItem('p2p_friends', JSON.stringify(friends));
     
-    // 2. Cancello le sue foto dal mio feed
     delete feedData[username];
     localStorage.setItem('p2p_feed', JSON.stringify(feedData));
     
     renderFriends();
     renderTimeline();
     showToast(`Non segui più @${username}.`);
-    
-    // Niente più avviso di unfollow inviato sulla rete! Marco se ne accorgerà da solo.
 }
 
 function renderFriends() {
     const list = document.getElementById('friends-list');
+    
     if (friends.length === 0) {
         list.innerHTML = `<p class="text-sm text-gray-400">Non segui ancora nessuno.</p>`;
         return;
     }
+    
     list.innerHTML = '';
+    
     friends.forEach(friend => {
+        const isPending = friend.status === 'pending';
+        const badge = isPending ? `<span class="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full ml-2 font-bold">In attesa</span>` : '';
+        
         const div = document.createElement('div');
         div.className = "flex justify-between items-center bg-gray-50 px-4 py-3 rounded-xl border border-gray-100";
         div.innerHTML = `
-            <span class="font-semibold text-sm text-gray-800">@${friend}</span>
-            <button onclick="removeFriend('${friend}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Rimuovi</button>
+            <div class="flex items-center">
+                <span class="font-semibold text-sm text-gray-800">@${friend.id}</span>
+                ${badge}
+            </div>
+            <button onclick="removeFriend('${friend.id}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Rimuovi</button>
         `;
         list.appendChild(div);
     });
