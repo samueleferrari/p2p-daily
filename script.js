@@ -640,10 +640,20 @@ function removeFollower(username) {
 }
 
 function renderFollowers() {
+    const section = document.getElementById('allowed-section');
     const list = document.getElementById('followers-list');
     
+    // 1. Se l'account è pubblico, nascondi l'intera sezione e fermati
+    if (!isPrivate) {
+        if (section) section.classList.add('hidden');
+        return;
+    }
+    
+    // 2. Se l'account è privato, mostra la sezione
+    if (section) section.classList.remove('hidden');
+    
     if (allowedFollowers.length === 0) {
-        list.innerHTML = `<p class="text-sm text-gray-400">Nessuno riceve le tue foto al momento.</p>`;
+        list.innerHTML = `<p class="text-sm text-gray-400">Nessuno è attualmente autorizzato a vedere le tue foto.</p>`;
         return;
     }
     
@@ -657,4 +667,14 @@ function renderFollowers() {
         `;
         list.appendChild(div);
     });
+}
+
+function togglePrivacy() {
+    isPrivate = document.getElementById('privacy-toggle').checked;
+    localStorage.setItem('p2p_isPrivate', isPrivate);
+    
+    renderRequests();
+    renderFollowers(); // <-- Aggiunto per nascondere/mostrare la lista in tempo reale
+    
+    showToast(isPrivate ? "Account reso Privato" : "Account reso Pubblico");
 }
