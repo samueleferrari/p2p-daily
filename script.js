@@ -230,6 +230,7 @@ function setupConnection(conn) {
 }
 
 // --- 2. GESTIONE RUBRICA (AMICI) ---
+// --- 2. GESTIONE RUBRICA (AMICI) ---
 function manualAddFriend() {
     const targetUser = document.getElementById('add-friend-input').value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!targetUser) {
@@ -241,18 +242,23 @@ function manualAddFriend() {
         return;
     }
 
-    if (!friends.includes(targetUser)) {
-        friends.push(targetUser);
+    // Controlliamo se l'amico esiste già cercando il suo .id
+    const existingFriend = friends.find(f => f.id === targetUser);
+    
+    if (!existingFriend) {
+        // Salviamo l'amico COME OGGETTO, non come stringa!
+        friends.push({ id: targetUser, status: 'pending' });
         localStorage.setItem('p2p_friends', JSON.stringify(friends));
+        
         renderFriends();
         showToast(`@${targetUser} aggiunto! Sincronizzazione in corso...`);
         document.getElementById('add-friend-input').value = '';
         
         // Tenta subito di connettersi e ascoltare
         const conn = peer.connect(targetUser);
-        setupConnection(conn); // <-- CORRETTO
+        setupConnection(conn);
     } else {
-        showToast("Segui già questo utente.");
+        showToast("Segui già questo utente o sei in attesa.");
     }
 }
 
