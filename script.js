@@ -4,8 +4,22 @@ let myUsername = localStorage.getItem('myUsername');
 let connections = [];
 
 const todayString = new Date().toISOString().split('T')[0];
-// Rubrica Amici (Array di stringhe)
+// --- RUBRICA AMICI (Formato rigoroso: array di oggetti) ---
 let friends = JSON.parse(localStorage.getItem('p2p_friends')) || [];
+
+// Pulizia automatica: ripara i vecchi salvataggi, elimina gli "undefined" e gli "[object Object]"
+friends = friends.map(f => {
+    if (typeof f === 'string') return { id: f, status: 'pending' };
+    return f;
+}).filter(f => 
+    f && 
+    f.id && 
+    typeof f.id === 'string' && 
+    f.id !== 'undefined' && 
+    !f.id.includes('[object Object]')
+);
+
+localStorage.setItem('p2p_friends', JSON.stringify(friends));
 // Stato del Feed Locale: { "nome_utente": { date: "...", image: "..." } }
 let feedData = JSON.parse(localStorage.getItem('p2p_feed')) || {};
 
