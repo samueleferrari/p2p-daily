@@ -170,8 +170,13 @@ function setupConnection(conn) {
     connections.push(conn);
 
     conn.on('open', () => {
-        // 1. Appena mi connetto, invio sempre una "richiesta di follow" nel caso lui sia privato
-        conn.send({ type: 'follow_request', sender: myUsername });
+        // 1. Controllo se QUESTA persona è nella mia rubrica (cioè se IO voglio seguire lei)
+        const wantsToFollow = friends.some(f => f.id === conn.peer);
+        
+        if (wantsToFollow) {
+            // Mando la richiesta solo se sono io che ho deciso di seguirlo
+            conn.send({ type: 'follow_request', sender: myUsername });
+        }
 
         // 2. Controllo se devo inviargli la mia foto
         const validPhoto = getValidPhoto();
@@ -181,7 +186,7 @@ function setupConnection(conn) {
                 conn.send({
                     type: 'photo',
                     sender: myUsername,
-                    timestamp: Date.now(), // Usiamo il timestamp invece di todayString
+                    timestamp: Date.now(),
                     image: validPhoto
                 });
             }
