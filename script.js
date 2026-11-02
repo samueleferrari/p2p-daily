@@ -135,9 +135,23 @@ async function initPeer(username) {
         setTimeout(syncFeed, 1000); 
     });
 
+    let isReconnecting = false;
+
     peer.on('disconnected', () => {
-        console.log("Disconnesso dal server PeerJS. Tentativo di riconnessione invisibile...");
-        peer.reconnect();
+        // Evitiamo di far partire mille tentativi contemporaneamente
+        if (isReconnecting) return;
+        
+        isReconnecting = true;
+        console.log("Disconnesso dal server PeerJS. Attendo 3 secondi prima di ricollegarmi...");
+        
+        // Aspettiamo 3 secondi prima di riprovare per evitare un loop infinito
+        setTimeout(() => {
+            if (peer.disconnected) {
+                console.log("Tentativo di riconnessione in corso...");
+                peer.reconnect();
+            }
+            isReconnecting = false;
+        }, 3000);
     });
 
     peer.on('connection', (conn) => {
