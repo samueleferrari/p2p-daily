@@ -170,18 +170,15 @@ function setupConnection(conn) {
     connections.push(conn);
 
     conn.on('open', () => {
-        // 1. Controllo se QUESTA persona è nella mia rubrica (cioè se IO voglio seguire lei)
+        // 1. Controllo se io voglio seguire lui, e in tal caso mando la richiesta
         const wantsToFollow = friends.some(f => f.id === conn.peer);
-        
         if (wantsToFollow) {
-            // Mando la richiesta solo se sono io che ho deciso di seguirlo
             conn.send({ type: 'follow_request', sender: myUsername });
         }
 
         // 2. Controllo se devo inviargli la mia foto
         const validPhoto = getValidPhoto();
         if (validPhoto) {
-            // Invia se: sono pubblico OPPURE se l'utente è nella mia Whitelist
             if (!isPrivate || allowedFollowers.includes(conn.peer)) {
                 conn.send({
                     type: 'photo',
@@ -194,32 +191,74 @@ function setupConnection(conn) {
     });
 
     conn.on('data', (data) => {
-        // GESTIONE RICHIESTE DI FOLLOW
+        
+        // --- 1. QUALCUNO MI CHIEDE DI SEGUIRMI ---
         if (data.type === 'follow_request') {
             if (isPrivate) {
-                // Sono privato: se non è già approvato e non ha già fatto richiesta, lo metto in coda
                 if (!allowedFollowers.includes(data.sender) && !followRequests.includes(data.sender)) {
                     followRequests.push(data.sender);
                     localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
                     renderRequests();
                     showToast(`Nuova richiesta di amicizia da @${data.sender}!`);
                 }
+                // Rispondo al suo telefono: "Sono privato, aspetta in coda"
+                conn.send({ type: 'follow_response', status: 'private', sender: myUsername });
             } else {
-                // Sono pubblico: approvo tutti automaticamente silenziamente. 
-                // Se non ce l'ho in whitelist, lo aggiungo.
                 if (!allowedFollowers.includes(data.sender)) {
                     allowedFollowers.push(data.sender);
                     localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
-                    renderFollowers(); // <--- AGGIUNGI QUESTO
+                    renderFollowers();
+                }
+                // Rispondo al suo telefono: "Sono pubblico, sei stato accettato subito"
+                conn.send({ type: 'follow_response', status: 'accepted', sender: myUsername });
+            }
+        }
+
+        // --- 2. RICEVO LA RISPOSTA ALLA MIA RICHIESTA ---
+        if (data.type === 'follow_response') {
+            const friendIndex = friends.findIndex(f => f.id === data.sender);
+            if (friendIndex !== -1) {
+                if (data.status === 'accepted') {
+                    // Se lui è pubblico, mi accetta istantaneamente: tolgo "In attesa"
+                    friends[friendIndex].status = 'accepted';
+                    localStorage.setItem('p2p_friends', JSON.stringify(friends));
+                    renderFriends();
+                    showToast(`Ora segui @${data.sender}!`);
+                } else if (data.status === 'private') {
+                    // L'etichetta resta, ma l'utente viene avvisato
+                    showToast(`L'account di @${data.sender} è privato. In attesa di approvazione.`);
                 }
             }
         }
 
-        // GESTIONE RICEZIONE FOTO
+        // --- 3. L'AMICO PRIVATO CLICCA "ACCETTA" DAL SUO SCHERMO ---
+        if (data.type === 'follow_accepted') {
+            const friendIndex = friends.findIndex(f => f.id === data.sender);
+            if (friendIndex !== -1) {
+                // Rimuoviamo finalmente il badge giallo!
+                friends[friendIndex].status = 'accepted';
+                localStorage.setItem('p2p_friends', JSON.stringify(friends));
+                renderFriends();
+                showToast(`@${data.sender} ha accettato la tua richiesta!`);
+            }
+        }
+
+        // --- 4. L'AMICO PRIVATO CLICCA "RIFIUTA" DAL SUO SCHERMO ---
+        if (data.type === 'follow_declined') {
+            // Eliminiamo la persona dalla nostra lista amici
+            friends = friends.filter(f => f.id !== data.sender);
+            localStorage.setItem('p2p_friends', JSON.stringify(friends));
+            renderFriends();
+            showToast(`@${data.sender} ha rifiutato la tua richiesta.`);
+        }
+
+        // --- 5. GESTIONE RICEZIONE FOTO ---
         if (data.type === 'photo') {
-            // Il MIO buttafuori: accetto la foto solo se IO seguo questa persona
-            if (!friends.includes(data.sender)) {
-                console.log(`Foto scartata: @${data.sender} non è nei tuoi amici.`);
+            // BUGFIX: Il buttafuori controlla se la richiesta è in stato 'accepted'
+            const isFriend = friends.some(f => f.id === data.sender && f.status === 'accepted');
+            
+            if (!isFriend) {
+                console.log(`Foto scartata: non sei autorizzato o sei ancora in attesa per @${data.sender}.`);
                 return; 
             }
 
@@ -501,20 +540,30 @@ function acceptRequest(username) {
     renderFollowers();
     showToast(`Hai accettato @${username}`);
 
-    // 3. Forzo l'invio immediato della mia foto al nuovo follower
-    const validPhoto = getValidPhoto();
-    if (validPhoto) {
-        const conn = peer.connect(username);
-        conn.on('open', () => {
+    // 3. Forzo la NOTIFICA di accettazione sulla rete e invio la foto
+    const conn = peer.connect(username);
+    conn.on('open', () => {
+        // Dico all'amico di togliere il badge giallo "In attesa"
+        conn.send({ type: 'follow_accepted', sender: myUsername });
+        
+        // Se ho una foto, gliela invio subito!
+        const validPhoto = getValidPhoto();
+        if (validPhoto) {
             conn.send({ type: 'photo', sender: myUsername, timestamp: Date.now(), image: validPhoto });
-        });
-    }
+        }
+    });
 }
 
 function declineRequest(username) {
     followRequests = followRequests.filter(u => u !== username);
     localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
     renderRequests();
+    
+    // Mando la NOTIFICA di rifiuto all'utente (lo farà sparire dalla sua lista)
+    const conn = peer.connect(username);
+    conn.on('open', () => {
+        conn.send({ type: 'follow_declined', sender: myUsername });
+    });
 }
 
 function renderRequests() {
