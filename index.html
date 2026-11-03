@@ -5,11 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>P2P Daily Photo</title>
     <link rel="icon" type="image/x-icon" href="./icons/512.png">
+    
     <!-- Link al Manifest per l'installazione -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#000000">
+    
+    <!-- Foglio di stile personalizzato -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Tailwind CSS per il design di base -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    
     <!-- Registrazione del Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
@@ -20,11 +27,6 @@
             });
         }
     </script>
-    <style>
-        .toast {
-            transition: opacity 0.3s ease-in-out;
-        }
-    </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen pb-20">
 
@@ -82,8 +84,7 @@
             </div>
         </section>
 
-<!-- Sezione: Connettiti (Rete P2P) -->
-    <!-- Sezione: I tuoi Amici -->
+        <!-- Sezione: I tuoi Amici -->
         <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <h2 class="text-lg font-semibold mb-2">I tuoi amici</h2>
             <p class="text-sm text-gray-500 mb-4">Aggiungi amici alla tua rubrica locale. Il loro feed verrà sincronizzato automaticamente.</p>
@@ -97,6 +98,7 @@
                 <!-- La lista amici comparirà qui, senza tasti "Connetti" -->
             </div>
         </section>
+
         <!-- Sezione: Persone acconsentite (Visibile solo se Privato) -->
         <section id="allowed-section" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-6 hidden">
             <h2 class="text-lg font-semibold mb-4 text-blue-600">Persone acconsentite</h2>
@@ -104,6 +106,7 @@
                 <!-- Le persone autorizzate appariranno qui -->
             </div>
         </section>
+
         <!-- Sezione: Richieste di Seguito (Visibile solo se Privato) -->
         <section id="requests-section" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hidden">
             <h2 class="text-lg font-semibold mb-4 text-orange-600">Richieste in sospeso</h2>
