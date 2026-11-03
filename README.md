@@ -1,82 +1,82 @@
 # 📸 P2P Daily
 
-P2P Daily è un esperimento di social network fotografico **completamente decentralizzato**. Nessun server centrale, nessun database che immagazzina i tuoi dati e nessuna profilazione. Le tue foto viaggiano direttamente dal tuo dispositivo a quello dei tuoi amici.
+P2P Daily is a **fully decentralized** photo social network experiment. No central server, no database storing your data, and no profiling. Your photos travel directly from your device to your friends' devices.
 
 ---
 
-## 🙋‍♀️ Per gli Utenti: Cos'è e come funziona?
+## 🙋‍♀️ For Users: What is it and how does it work?
 
-Siamo abituati a social network dove ogni foto, prima di arrivare ai nostri amici, passa per i server di una grande azienda. P2P Daily cambia le regole del gioco.
+We are used to social networks where every photo passes through a large company's servers before reaching our friends. P2P Daily changes the rules of the game.
 
-### 🌟 Caratteristiche Principali
-* **Nessun Database Centrale:** Le tue foto e i tuoi contatti sono salvati **solo** sul tuo telefono (nella memoria del browser).
-* **Connessione Diretta (Peer-to-Peer):** Quando condividi una foto, il tuo dispositivo crea un "tubo" invisibile e diretto con il dispositivo del tuo amico per passargli l'immagine.
-* **Foto Effimere:** Puoi scattare o caricare al massimo una foto al giorno. Le foto ricevute scadono e spariscono automaticamente dal feed allo scadere del tempo.
-* **Privacy Assoluta:** 
-  * Se hai un **Account Pubblico**, chiunque ti aggiunga riceverà la tua foto del giorno.
-  * Se hai un **Account Privato**, chi ti cerca dovrà inviarti una "Richiesta". Finché non premi *Accetta*, il tuo dispositivo rifiuterà fisicamente di inviare i byte della tua foto a quella persona.
+### 🌟 Key Features
+* **No Central Database:** Your photos and contacts are saved **only** on your phone (in the browser's memory).
+* **Direct Connection (Peer-to-Peer):** When you share a photo, your device creates an invisible, direct "pipe" to your friend's device to transfer the image.
+* **Ephemeral Photos:** You can take or upload a maximum of one photo per day. Received photos expire and automatically disappear from the feed when their time is up.
+* **Absolute Privacy:** 
+  * If you have a **Public Account**, anyone who adds you will receive your photo of the day.
+  * If you have a **Private Account**, anyone looking for you must send a "Request". Until you press *Accept*, your device will physically refuse to send your photo's bytes to that person.
 
-### 🚀 Come iniziare
-1. Apri l'app e scegli un **Username** (es. `marco99`). Questo nome identificherà il tuo dispositivo nella rete.
-2. Scatta o carica la tua foto del giorno.
-3. Chiedi ai tuoi amici il loro Username e inseriscilo nella barra **"I tuoi amici"**.
-4. Quando siete entrambi online, cliccate su **Sincronizza**: i telefoni si troveranno e si scambieranno le foto in tempo reale!
+### 🚀 How to Get Started
+1. Open the app and choose a **Username** (e.g., `marco99`). This name will identify your device on the network.
+2. Take or upload your photo of the day.
+3. Ask your friends for their Username and enter it in the **"Your friends"** bar.
+4. When you are both online, click **Sync**: the phones will find each other and exchange photos in real-time!
 
 ---
 
-## 💻 Per gli Sviluppatori: Sotto il cofano
+## 💻 For Developers: Under the Hood
 
-P2P Daily è una **Progressive Web App (PWA)** scritta in Vanilla JavaScript, HTML e CSS (Tailwind), basata sul protocollo **WebRTC** per le comunicazioni in tempo reale.
+P2P Daily is a **Progressive Web App (PWA)** written in Vanilla JavaScript, HTML, and CSS (Tailwind), based on the **WebRTC** protocol for real-time communications.
 
-### 🏗️ Architettura e Tech Stack
-* **Frontend:** HTML5, Tailwind CSS (via CDN/file separato), Vanilla JS.
-* **P2P Networking:** [PeerJS](https://peerjs.com/) per l'astrazione di WebRTC.
-* **Storage:** API `localStorage` del browser.
-* **Traversamento NAT/Firewall (ICE):** Serverless Function su **Vercel** (`/api/turn.js`) che comunica con le API di **Twilio** per generare credenziali server TURN temporanee.
-* **PWA:** Manifest e Service Worker (`sw.js`) per l'installabilità e la gestione della cache offline.
+### 🏗️ Architecture and Tech Stack
+* **Frontend:** HTML5, Tailwind CSS (via CDN/separate file), Vanilla JS.
+* **P2P Networking:** [PeerJS](https://peerjs.com/) for WebRTC abstraction.
+* **Storage:** Browser `localStorage` API.
+* **NAT/Firewall Traversal (ICE):** Serverless Function on **Vercel** (`/api/turn.js`) that communicates with **Twilio** APIs to generate temporary TURN server credentials.
+* **PWA:** Manifest and Service Worker (`sw.js`) for installability and offline cache management.
 
-### 🔄 Il Protocollo di Handshake Custom
-Poiché non esiste un server centrale a gestire le amicizie, i client devono negoziare la privacy comunicando tra loro in tempo reale. Abbiamo implementato un sistema di messaggistica asincrona basato su JSON inviati tramite `DataConnection` di WebRTC:
+### 🔄 Custom Handshake Protocol
+Since there is no central server managing friendships, clients must negotiate privacy by communicating with each other in real-time. We implemented an asynchronous messaging system based on JSON payloads sent via WebRTC `DataConnection`:
 
-1. `follow_request`: Inviata quando A aggiunge B.
-2. `follow_response`: B risponde automaticamente con `status: 'private'` o `status: 'accepted'`.
-3. `follow_accepted` / `follow_declined`: Inviati quando l'utente B (privato) preme i bottoni sulla UI.
-4. `unfollow`: Inviato per rimuovere in background i permessi dalla Whitelist dell'altro peer.
-5. `photo`: Il payload contenente l'immagine (in Base64 compresso) e il timestamp.
+1. `follow_request`: Sent when A adds B.
+2. `follow_response`: B replies automatically with `status: 'private'` or `status: 'accepted'`.
+3. `follow_accepted` / `follow_declined`: Sent when user B (private) presses the UI buttons.
+4. `unfollow`: Sent to remove permissions from the other peer's Whitelist in the background.
+5. `photo`: The payload containing the image (in compressed Base64) and the timestamp.
 
-### 💾 Gestione dello Stato Locale
-Tutta la logica di persistenza si basa sul `localStorage`. Gli oggetti principali sono:
-* `p2p_friends`: Array di oggetti `{ id: "username", status: "pending" | "accepted" }`.
-* `p2p_feed`: Oggetto mappato per utente contenente timestamp e stringa Base64 della foto.
-* `p2p_allowed`: La "Whitelist" (Followers) di chi ha il permesso di ricevere i nostri pacchetti WebRTC.
-* `p2p_requests`: Array di username in attesa di approvazione (se l'account è privato).
+### 💾 Local State Management
+All persistence logic relies on `localStorage`. The main objects are:
+* `p2p_friends`: Array of objects `{ id: "username", status: "pending" | "accepted" }`.
+* `p2p_feed`: Object mapped by user containing the photo's timestamp and Base64 string.
+* `p2p_allowed`: The "Whitelist" (Followers) of those permitted to receive our WebRTC packets.
+* `p2p_requests`: Array of usernames awaiting approval (if the account is private).
 
-### 🛠️ Setup e Installazione Locale
+### 🛠️ Local Setup and Installation
 
-Per far girare questo progetto in locale ed esplorare il codice, hai bisogno di Node.js e dell'interfaccia a riga di comando di Vercel (poiché le credenziali TURN sono protette da una Serverless Function).
+To run this project locally and explore the code, you need Node.js and the Vercel CLI (since TURN credentials are protected by a Serverless Function).
 
-**1. Clona il repository**
+**1. Clone the repository**
 ```bash
-git clone [https://github.com/tuo-username/p2p-daily.git](https://github.com/tuo-username/p2p-daily.git)
+git clone [https://github.com/your-username/p2p-daily.git](https://github.com/your-username/p2p-daily.git)
 cd p2p-daily
 
 ```
 
-**2. Configura l'ambiente Twilio (Server TURN)**
-Per far funzionare WebRTC anche sotto rete 4G/5G, l'app usa Twilio.
+**2. Configure the Twilio Environment (TURN Server)**
+To make WebRTC work even on 4G/5G networks, the app uses Twilio.
 
-* Crea un account gratuito su [Twilio](https://www.twilio.com/).
-* Naviga su *Network Traversal* per ottenere il tuo `ACCOUNT SID` e `AUTH TOKEN`.
-* Crea un file `.env` nella root del progetto e inserisci le chiavi:
+* Create a free account on [Twilio](https://www.twilio.com/).
+* Navigate to *Network Traversal* to get your `ACCOUNT SID` and `AUTH TOKEN`.
+* Create a `.env` file in the project root and insert the keys:
 
 ```env
-TWILIO_ACCOUNT_SID=il_tuo_sid_qui
-TWILIO_AUTH_TOKEN=il_tuo_token_qui
+TWILIO_ACCOUNT_SID=your_sid_here
+TWILIO_AUTH_TOKEN=your_token_here
 
 ```
 
-**3. Avvia l'ambiente di sviluppo locale**
-Installa la Vercel CLI (se non l'hai già) e avvia il progetto:
+**3. Start the local development environment**
+Install the Vercel CLI (if you haven't already) and start the project:
 
 ```bash
 npm i -g vercel
@@ -84,18 +84,19 @@ vercel dev
 
 ```
 
-L'app sarà disponibile su `http://localhost:3000`.
+The app will be available at `http://localhost:3000`.
 
-### 🤝 Come contribuire
+### 🤝 How to Contribute
 
-I contributi sono benvenuti! Le aree principali di miglioramento attuali includono:
+Contributions are welcome! The main areas for current improvement include:
 
-* **UI/UX:** Miglioramento degli stati di caricamento durante la negoziazione WebRTC.
-* **Ottimizzazione Immagini:** Attualmente le immagini vengono ridimensionate tramite `canvas` a max 800px e compresse in JPEG (qualità 0.7) in locale prima dell'invio. Si possono implementare algoritmi più efficienti (es. WebP).
-* **Sync Background:** Utilizzo delle API Background Sync (dove supportate) per la negoziazione asincrona anche ad app minimizzata.
+* **UI/UX:** Improving loading states during WebRTC negotiation.
+* **Image Optimization:** Currently, images are resized via `canvas` to max 800px and compressed into JPEG (0.7 quality) locally before sending. More efficient algorithms (e.g., WebP) can be implemented.
+* **Background Sync:** Utilizing Background Sync APIs (where supported) for asynchronous negotiation even when the app is minimized.
 
-Crea un *Fork* del progetto, fai le tue modifiche e apri una *Pull Request*!
+Create a *Fork* of the project, make your changes, and open a *Pull Request*!
 
 ---
 
-*Sviluppato con passione per un web più libero e decentralizzato.* 🌐
+*Developed with passion for a freer and decentralized web.* 🌐
+

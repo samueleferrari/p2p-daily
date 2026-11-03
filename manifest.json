@@ -1,7 +1,7 @@
 {
   "name": "P2P Daily Photo",
   "short_name": "P2P Daily",
-  "description": "Il social network decentralizzato con una foto al giorno.",
+  "description": "Decentralized social network for sharing daily photos using peer-to-peer technology.",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",

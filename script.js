@@ -1,13 +1,13 @@
-// --- LOGICA DI BASE E STATO LOCALE ---
+// --- CORE LOGIC AND LOCAL STATE ---
 let peer;
 let myUsername = localStorage.getItem('myUsername');
 let connections = [];
 
 const todayString = new Date().toISOString().split('T')[0];
-// --- RUBRICA AMICI (Formato rigoroso: array di oggetti) ---
+// --- FRIENDS ADDRESS BOOK (Strict format: array of objects) ---
 let friends = JSON.parse(localStorage.getItem('p2p_friends')) || [];
 
-// Pulizia automatica: ripara i vecchi salvataggi, elimina gli "undefined" e gli "[object Object]"
+// Automatic cleanup: fixes old saves, removes "undefined" and "[object Object]"
 friends = friends.map(f => {
     if (typeof f === 'string') return { id: f, status: 'pending' };
     return f;
@@ -20,17 +20,17 @@ friends = friends.map(f => {
 );
 
 localStorage.setItem('p2p_friends', JSON.stringify(friends));
-// Stato del Feed Locale: { "nome_utente": { date: "...", image: "..." } }
+// Local Feed State: { "username": { date: "...", image: "..." } }
 let feedData = JSON.parse(localStorage.getItem('p2p_feed')) || {};
 
-// --- STATO PRIVACY E PERMESSI ---
+// --- PRIVACY STATE AND PERMISSIONS ---
 let isPrivate = localStorage.getItem('p2p_isPrivate') === 'true';
-// Chi ha il permesso di vedere le nostre foto (Whitelist)
+// Who is allowed to see our photos (Whitelist)
 let allowedFollowers = JSON.parse(localStorage.getItem('p2p_allowed')) || [];
-// Chi ha chiesto di seguirci
+// Who requested to follow us
 let followRequests = JSON.parse(localStorage.getItem('p2p_requests')) || [];
 
-// Pulizia giornaliera: elimina dal feed locale le foto dei giorni precedenti
+// Daily cleanup: removes photos from previous days from the local feed
 for (let user in feedData) {
     if (feedData[user].date !== todayString) {
         delete feedData[user];
@@ -38,14 +38,14 @@ for (let user in feedData) {
 }
 localStorage.setItem('p2p_feed', JSON.stringify(feedData));
 
-// --- INIZIALIZZAZIONE ---
+// --- INITIALIZATION ---
 window.onload = () => {
     if (myUsername) {
         showMainApp();
         initPeer(myUsername);
         checkDailyPhoto();
         renderFriends();
-        renderTimeline(); // Mostra subito le foto in memoria!
+        renderTimeline(); // Instantly show photos in memory!
         renderRequests();
         renderFollowers();
     } else {
@@ -53,7 +53,7 @@ window.onload = () => {
     }
 };
 
-// --- GESTIONE INTERFACCIA SEZIONI ---
+// --- UI SECTION MANAGEMENT ---
 function showRegistration() {
     document.getElementById('registration-section').classList.remove('hidden');
     document.getElementById('main-app-section').classList.add('hidden');
@@ -71,37 +71,37 @@ function registerDevice() {
     let safeUsername = rawInput.replace(/[^a-z0-9]/g, '');
 
     if (safeUsername.length < 3) {
-        showToast("Usa almeno 3 caratteri alfanumerici.");
+        showToast("Use at least 3 alphanumeric characters.");
         return;
     }
     myUsername = safeUsername;
     initPeer(myUsername);
 }
 
-// --- 1. GESTIONE RETE P2P E CONNESSIONI ---
+// --- 1. P2P NETWORK AND CONNECTIONS MANAGEMENT ---
 async function initPeer(username) {
     let iceServers = [];
 
     try {
-        showToast("Recupero credenziali di rete...");
+        showToast("Fetching network credentials...");
         const response = await fetch('/api/turn');
         
         if (response.ok) {
             const data = await response.json();
 
-            // ... (dentro initPeer, dopo aver ricevuto la risposta da /api/turn)
+            // ... (inside initPeer, after receiving the response from /api/turn)
             if (Array.isArray(data)) {
-                iceServers = data; // Twilio invia l'array direttamente qui a volte
+                iceServers = data; // Twilio sends the array directly here sometimes
             } else if (data && Array.isArray(data.iceServers)) {
                 iceServers = data.iceServers;
             } else if (data && Array.isArray(data.ice_servers)) {
-                iceServers = data.ice_servers; // <--- Gestisce il formato di Twilio (con il trattino basso)
+                iceServers = data.ice_servers; // <--- Handles Twilio's format (with underscore)
             } else {
-                throw new Error("Formato credenziali sconosciuto");
+                throw new Error("Unknown credentials format");
             }
 
-            // --- INIZIO_FIX: FILTRO DI SICUREZZA ---
-            // 1. Convertiamo vecchi formati 'url' nel nuovo standard 'urls'
+            // --- FIX_START: SECURITY FILTER ---
+            // 1. Convert old 'url' formats to the new 'urls' standard
             iceServers = iceServers.map(server => {
                 if (server.url && !server.urls) {
                     server.urls = server.url;
@@ -109,46 +109,46 @@ async function initPeer(username) {
                 return server;
             });
 
-            // 2. Scartiamo tutto ciò che non ha un indirizzo valido
+            // 2. Discard anything that doesn't have a valid address
             iceServers = iceServers.filter(server => server.urls);
             iceServers = iceServers.slice(0, 2);
 
-            // 3. Se l'array è vuoto, significa che Metered ci ha mandato un errore
+            // 3. If the array is empty, it means Metered sent us an error
             if (iceServers.length === 0) {
-                console.warn("Metered ha restituito un errore invece dei server:", data);
+                console.warn("Metered returned an error instead of servers:", data);
             }
-            // --- FINE FIX ---
+            // --- FIX END ---
 
-            // Aggiungiamo sempre il server STUN di Google come rete di sicurezza
+            // Always add Google's STUN server as a safety net
             iceServers.push({ urls: 'stun:stun.l.google.com:19302' });
-            console.log("I MIEI SERVER ICE SONO:", iceServers);
+            console.log("MY ICE SERVERS ARE:", iceServers);
             
         } else {
-            console.warn("API TURN fallita, uso server di base.");
+            console.warn("TURN API failed, using fallback server.");
             iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
         }
     } catch (error) {
-        console.error("Errore recupero TURN:", error);
+        console.error("Error fetching TURN:", error);
         iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
     }
 
-    // 2. Inizializziamo PeerJS con le credenziali appena ricevute
+    // 2. Initialize PeerJS with the newly received credentials
     peer = new Peer(username, {
         config: {
             iceServers: iceServers
         }
     });
     
-    let reconnectTimeout = 3000; // Timer dinamico che aumenterà se il server fa i capricci
+    let reconnectTimeout = 3000; // Dynamic timer that increases if the server acts up
     let isReconnecting = false;
 
     peer.on('open', (id) => {
-        reconnectTimeout = 3000; // Resettiamo il timer se la connessione ha successo
+        reconnectTimeout = 3000; // Reset timer on successful connection
         localStorage.setItem('myUsername', id);
         document.getElementById('my-peer-id').textContent = id;
         showMainApp();
         checkDailyPhoto();
-        showToast("Sei online, @" + id);
+        showToast("You are online, @" + id);
         
         setTimeout(syncFeed, 1000); 
     });
@@ -157,12 +157,12 @@ async function initPeer(username) {
         if (isReconnecting || peer.destroyed) return;
         
         isReconnecting = true;
-        console.log(`Disconnesso dal server. Riprovo tra ${reconnectTimeout / 1000} secondi...`);
+        console.log(`Disconnected from server. Retrying in ${reconnectTimeout / 1000} seconds...`);
         
         setTimeout(() => {
             if (peer.disconnected && !peer.destroyed) {
                 peer.reconnect();
-                // Se fallisce, la prossima volta aspetterà 2 secondi in più (massimo 15 sec)
+                // If it fails, next time wait 2 more seconds (max 15 sec)
                 reconnectTimeout = Math.min(reconnectTimeout + 2000, 15000);
             }
             isReconnecting = false;
@@ -176,22 +176,22 @@ async function initPeer(username) {
     peer.on('error', (err) => {
         if (err.type === 'unavailable-id') {
             if (localStorage.getItem('myUsername')) {
-                showToast("Attenzione: Sei già connesso in un'altra scheda.");
+                showToast("Warning: You are already connected in another tab.");
                 document.getElementById('main-app-section').classList.add('hidden');
             } else {
-                showToast("Questo username è già in uso! Scegline un altro.");
+                showToast("This username is already in use! Choose another one.");
                 localStorage.removeItem('myUsername');
                 myUsername = null;
                 showRegistration();
             }
         } else if (err.type === 'peer-unavailable' || err.message.includes('Could not connect to peer')) {
-            console.log("Un utente cercato è offline al momento.");
+            console.log("A requested user is currently offline.");
         } else if (err.type === 'network' || err.type === 'server-error' || err.message.includes('Lost connection')) {
-            // IL SERVER CI HA BUTTATO FUORI. Silenziamo l'errore rosso.
-            // Ci pensa l'evento 'disconnected' qui sopra a farci ricollegare in pace.
-            console.warn("Avviso di rete: micro-disconnessione dal server centrale gestita in background.");
+            // THE SERVER KICKED US OUT. Silence the red error.
+            // The 'disconnected' event above will handle reconnecting peacefully.
+            console.warn("Network notice: micro-disconnection from central server handled in background.");
         } else {
-            console.error("Errore P2P:", err);
+            console.error("P2P Error:", err);
         }
     });
 }
@@ -200,15 +200,15 @@ function setupConnection(conn) {
     connections.push(conn);
 
     conn.on('open', () => {
-        // 1. Controllo se io voglio seguire lui, e in tal caso mando la richiesta
+        // 1. Check if I want to follow them, and if so send the request
         const myFriendRecord = friends.find(f => f.id === conn.peer);
         
-        // Mando la richiesta di follow SOLO se sono ancora in attesa (pending)
+        // Send follow request ONLY if still pending
         if (myFriendRecord && myFriendRecord.status === 'pending') {
             conn.send({ type: 'follow_request', sender: myUsername });
         }
 
-        // 2. Controllo se devo inviargli la mia foto
+        // 2. Check if I need to send my photo
         const validPhoto = getValidPhoto();
         if (validPhoto) {
             if (!isPrivate || allowedFollowers.includes(conn.peer)) {
@@ -224,16 +224,16 @@ function setupConnection(conn) {
 
     conn.on('data', (data) => {
         
-        // --- 1. QUALCUNO MI CHIEDE DI SEGUIRMI ---
+        // --- 1. SOMEONE ASKS TO FOLLOW ME ---
         if (data.type === 'follow_request') {
             if (isPrivate) {
                 if (!allowedFollowers.includes(data.sender) && !followRequests.includes(data.sender)) {
                     followRequests.push(data.sender);
                     localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
                     renderRequests();
-                    showToast(`Nuova richiesta di amicizia da @${data.sender}!`);
+                    showToast(`New friend request from @${data.sender}!`);
                 }
-                // Rispondo al suo telefono: "Sono privato, aspetta in coda"
+                // Reply to their phone: "I'm private, wait in queue"
                 conn.send({ type: 'follow_response', status: 'private', sender: myUsername });
             } else {
                 if (!allowedFollowers.includes(data.sender)) {
@@ -241,56 +241,56 @@ function setupConnection(conn) {
                     localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
                     renderFollowers();
                 }
-                // Rispondo al suo telefono: "Sono pubblico, sei stato accettato subito"
+                // Reply to their phone: "I'm public, accepted immediately"
                 conn.send({ type: 'follow_response', status: 'accepted', sender: myUsername });
             }
         }
 
-        // --- 2. RICEVO LA RISPOSTA ALLA MIA RICHIESTA ---
+        // --- 2. RECEIVING RESPONSE TO MY REQUEST ---
         if (data.type === 'follow_response') {
             const friendIndex = friends.findIndex(f => f.id === data.sender);
             if (friendIndex !== -1) {
                 if (data.status === 'accepted') {
-                    // Se lui è pubblico, mi accetta istantaneamente: tolgo "In attesa"
+                    // If public, I'm accepted instantly: remove "Pending"
                     friends[friendIndex].status = 'accepted';
                     localStorage.setItem('p2p_friends', JSON.stringify(friends));
                     renderFriends();
-                    showToast(`Ora segui @${data.sender}!`);
+                    showToast(`You are now following @${data.sender}!`);
                 } else if (data.status === 'private') {
-                    // L'etichetta resta, ma l'utente viene avvisato
-                    showToast(`L'account di @${data.sender} è privato. In attesa di approvazione.`);
+                    // Label remains, but user is notified
+                    showToast(`@${data.sender}'s account is private. Awaiting approval.`);
                 }
             }
         }
 
-        // --- 3. L'AMICO PRIVATO CLICCA "ACCETTA" DAL SUO SCHERMO ---
+        // --- 3. PRIVATE FRIEND CLICKS "ACCEPT" ON THEIR SCREEN ---
         if (data.type === 'follow_accepted') {
             const friendIndex = friends.findIndex(f => f.id === data.sender);
             if (friendIndex !== -1) {
-                // Rimuoviamo finalmente il badge giallo!
+                // Finally remove the yellow badge!
                 friends[friendIndex].status = 'accepted';
                 localStorage.setItem('p2p_friends', JSON.stringify(friends));
                 renderFriends();
-                showToast(`@${data.sender} ha accettato la tua richiesta!`);
+                showToast(`@${data.sender} accepted your request!`);
             }
         }
 
-        // --- 4. L'AMICO PRIVATO CLICCA "RIFIUTA" DAL SUO SCHERMO ---
+        // --- 4. PRIVATE FRIEND CLICKS "DECLINE" ON THEIR SCREEN ---
         if (data.type === 'follow_declined') {
-            // Eliminiamo la persona dalla nostra lista amici
+            // Remove the person from our friends list
             friends = friends.filter(f => f.id !== data.sender);
             localStorage.setItem('p2p_friends', JSON.stringify(friends));
             renderFriends();
-            showToast(`@${data.sender} ha rifiutato la tua richiesta.`);
+            showToast(`@${data.sender} declined your request.`);
         }
 
-        // --- 5. GESTIONE RICEZIONE FOTO ---
+        // --- 5. HANDLING PHOTO RECEPTION ---
         if (data.type === 'photo') {
-            // BUGFIX: Il buttafuori controlla se la richiesta è in stato 'accepted'
+            // BUGFIX: Bouncer checks if the request is 'accepted'
             const isFriend = friends.some(f => f.id === data.sender && f.status === 'accepted');
             
             if (!isFriend) {
-                console.log(`Foto scartata: non sei autorizzato o sei ancora in attesa per @${data.sender}.`);
+                console.log(`Photo discarded: you are not authorized or still pending for @${data.sender}.`);
                 return; 
             }
 
@@ -299,47 +299,46 @@ function setupConnection(conn) {
                 image: data.image
             };
             localStorage.setItem('p2p_feed', JSON.stringify(feedData));
-            showToast(`Nuova foto da @${data.sender}!`);
+            showToast(`New photo from @${data.sender}!`);
             renderTimeline(); 
         }
     });
 }
 
-// --- 2. GESTIONE RUBRICA (AMICI) ---
-// --- 2. GESTIONE RUBRICA (AMICI) ---
+// --- 2. ADDRESS BOOK MANAGEMENT (FRIENDS) ---
 function manualAddFriend() {
     const targetUser = document.getElementById('add-friend-input').value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!targetUser) {
-        showToast("Inserisci un username valido.");
+        showToast("Enter a valid username.");
         return;
     }
     if (targetUser === myUsername) {
-        showToast("Non puoi aggiungere te stesso.");
+        showToast("You cannot add yourself.");
         return;
     }
 
-    // Controlliamo se l'amico esiste già cercando il suo .id
+    // Check if friend already exists by finding their .id
     const existingFriend = friends.find(f => f.id === targetUser);
     
     if (!existingFriend) {
-        // Salviamo l'amico COME OGGETTO, non come stringa!
+        // Save friend AS OBJECT, not as string!
         friends.push({ id: targetUser, status: 'pending' });
         localStorage.setItem('p2p_friends', JSON.stringify(friends));
         
         renderFriends();
-        showToast(`@${targetUser} aggiunto! Sincronizzazione in corso...`);
+        showToast(`@${targetUser} added! Syncing...`);
         document.getElementById('add-friend-input').value = '';
         
-        // Tenta subito di connettersi e ascoltare
+        // Attempt immediate connection and listen
         const conn = peer.connect(targetUser);
         setupConnection(conn);
     } else {
-        showToast("Segui già questo utente o sei in attesa.");
+        showToast("You already follow this user or are pending.");
     }
 }
 
 function removeFriend(username) {
-    // Filtra rigorosamente usando l'id dell'oggetto
+    // Filter strictly using the object's id
     friends = friends.filter(f => f.id !== username);
     localStorage.setItem('p2p_friends', JSON.stringify(friends));
     
@@ -348,14 +347,14 @@ function removeFriend(username) {
     
     renderFriends();
     renderTimeline();
-    showToast(`Non segui più @${username}.`);
+    showToast(`You are no longer following @${username}.`);
 }
 
 function renderFriends() {
     const list = document.getElementById('friends-list');
     
     if (friends.length === 0) {
-        list.innerHTML = `<p class="text-sm text-gray-400">Non segui ancora nessuno.</p>`;
+        list.innerHTML = `<p class="text-sm text-gray-400">You aren't following anyone yet.</p>`;
         return;
     }
     
@@ -363,7 +362,7 @@ function renderFriends() {
     
     friends.forEach(friend => {
         const isPending = friend.status === 'pending';
-        const badge = isPending ? `<span class="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full ml-2 font-bold">In attesa</span>` : '';
+        const badge = isPending ? `<span class="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full ml-2 font-bold">Pending</span>` : '';
         
         const div = document.createElement('div');
         div.className = "flex justify-between items-center bg-gray-50 px-4 py-3 rounded-xl border border-gray-100";
@@ -372,29 +371,29 @@ function renderFriends() {
                 <span class="font-semibold text-sm text-gray-800">@${friend.id}</span>
                 ${badge}
             </div>
-            <button onclick="removeFriend('${friend.id}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Rimuovi</button>
+            <button onclick="removeFriend('${friend.id}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Remove</button>
         `;
         list.appendChild(div);
     });
 }
 
-// --- 3. GESTIONE FEED E SINCRONIZZAZIONE ---
+// --- 3. FEED MANAGEMENT AND SYNC ---
 function syncFeed() {
     if (friends.length === 0) return;
     
-    // CORREZIONE VITALE: Se siamo disconnessi, proviamo a rientrare MA CI FERMIAMO QUI
+    // VITAL FIX: If disconnected, try to reconnect BUT STOP HERE
     if (peer.disconnected) {
-        showToast("Rete instabile. Riconnessione in corso...");
+        showToast("Unstable network. Reconnecting...");
         peer.reconnect();
-        return; // <-- IL SEGRETO È QUESTO RETURN. Impedisce al codice di cercare gli amici schiantando l'app!
+        return; // <-- THE SECRET IS THIS RETURN. Prevents code from finding friends and crashing the app!
     }
 
     if (peer.destroyed) {
-        showToast("Connessione persa definitivamente. Ricarica la pagina.");
+        showToast("Connection permanently lost. Reload the page.");
         return;
     }
 
-    showToast("Sincronizzazione in corso...");
+    showToast("Syncing in progress...");
     
     friends.forEach(friend => {
         if (friend && friend.id) {
@@ -413,7 +412,7 @@ function renderTimeline() {
     if (users.length === 0) {
         timeline.innerHTML = `
             <p id="empty-timeline-msg" class="text-center text-gray-400 text-sm py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                Nessuna foto ricevuta oggi. Aggiungi amici o clicca su Sincronizza!
+                No photos received today. Add friends or click Sync!
             </p>`;
         return;
     }
@@ -427,23 +426,23 @@ function renderTimeline() {
                 <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex-shrink-0"></div>
                 <div class="ml-3">
                     <p class="text-sm font-bold text-gray-900">@${user}</p>
-                    <p class="text-xs text-gray-500">Oggi</p>
+                    <p class="text-xs text-gray-500">Today</p>
                 </div>
             </div>
-            <img src="${post.image}" class="w-full rounded-lg object-cover" alt="Foto di ${user}">
+            <img src="${post.image}" class="w-full rounded-lg object-cover" alt="Photo by ${user}">
         `;
-        // Inserisce sempre in cima
+        // Always prepend at the top
         timeline.prepend(postDiv);
     });
 }
 
-// --- 4. GESTIONE FOTOCAMERA / UPLOAD (Invariata) ---
-// // Imposta qui i secondi di validità per i tuoi test (es. 60 secondi)
+// --- 4. CAMERA / UPLOAD MANAGEMENT (Unchanged) ---
+// Set validity seconds here for testing (e.g., 60 seconds)
 const PHOTO_LIFETIME_SECONDS = 300; 
 
 function checkDailyPhoto() {
     const savedPhoto = localStorage.getItem('dailyPhoto');
-    const savedTimestamp = localStorage.getItem('photoTimestamp'); // Nuova chiave temporale
+    const savedTimestamp = localStorage.getItem('photoTimestamp'); // New time key
     
     const uploadSection = document.getElementById('upload-section');
     const displaySection = document.getElementById('my-photo-display');
@@ -452,22 +451,22 @@ function checkDailyPhoto() {
     let isValid = false;
 
     if (savedPhoto && savedTimestamp) {
-        const now = Date.now(); // Ora attuale in millisecondi
+        const now = Date.now(); // Current time in milliseconds
         const timePassedSeconds = (now - parseInt(savedTimestamp, 10)) / 1000;
         
-        // Se il tempo trascorso è minore del limite impostato, la foto è valida
+        // If time passed is less than the limit, the photo is valid
         if (timePassedSeconds < PHOTO_LIFETIME_SECONDS) {
             isValid = true;
         }
     }
 
     if (isValid) {
-        // La foto è ancora valida
+        // Photo is still valid
         uploadSection.classList.add('hidden');
         displaySection.classList.remove('hidden');
         myPhotoImg.src = savedPhoto;
     } else {
-        // La foto è scaduta o non esiste: puliamo la memoria e mostriamo l'upload
+        // Photo expired or doesn't exist: clear memory and show upload
         if (savedPhoto) {
             localStorage.removeItem('dailyPhoto');
             localStorage.removeItem('photoTimestamp');
@@ -490,25 +489,25 @@ function getValidPhoto() {
     return null;
 }
 
-// --- 4. GESTIONE FOTOCAMERA / UPLOAD CON COMPRESSIONE ---
+// --- 4. CAMERA / UPLOAD MANAGEMENT WITH COMPRESSION ---
 function handlePhotoUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showToast("Compressione foto in corso...");
+    showToast("Compressing photo...");
 
     const reader = new FileReader();
     reader.onload = (e) => {
-        // Creiamo un'immagine in memoria
+        // Create an image in memory
         const img = new Image();
         img.onload = () => {
-            // Creiamo una tela invisibile per rimpicciolire l'immagine
+            // Create a hidden canvas to resize the image
             const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 800; // Larghezza massima per le foto P2P
+            const MAX_WIDTH = 800; // Max width for P2P photos
             let width = img.width;
             let height = img.height;
 
-            // Calcoliamo le nuove proporzioni
+            // Calculate new aspect ratio
             if (width > MAX_WIDTH) {
                 height = Math.floor(height * (MAX_WIDTH / width));
                 width = MAX_WIDTH;
@@ -517,31 +516,31 @@ function handlePhotoUpload(event) {
             canvas.width = width;
             canvas.height = height;
 
-            // Disegniamo l'immagine rimpicciolita sulla tela
+            // Draw the resized image on canvas
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Trasformiamo la tela in un JPEG compresso (0.7 = 70% di qualità)
+            // Convert canvas to compressed JPEG (0.7 = 70% quality)
             const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
 
             try {
-                // Salviamo l'immagine compressa nel telefono
+                // Save the compressed image on the phone
                 localStorage.setItem('dailyPhoto', compressedBase64);
                 // localStorage.setItem('dailyDate', todayString);
                 localStorage.setItem('photoTimestamp', Date.now().toString());
 
                 checkDailyPhoto();
-                showToast("Foto salvata! I tuoi amici la riceveranno.");
+                showToast("Photo saved! Your friends will receive it.");
                 
-                // Invio a chi è connesso in questo momento
+                // Send to currently connected peers
                 connections.forEach(conn => {
                     if (conn.open) {
                         conn.send({ type: 'photo', sender: myUsername, date: todayString, image: compressedBase64 });
                     }
                 });
             } catch (error) {
-                // Catturiamo eventuali errori di memoria piena del telefono
-                showToast("Errore di salvataggio: memoria piena o foto troppo grande.");
+                // Catch out-of-memory errors on the phone
+                showToast("Save error: storage full or photo too large.");
                 console.error(error);
             }
         };
@@ -564,20 +563,23 @@ function showToast(message) {
 }
 
 
-// --- GESTIONE PRIVACY E RICHIESTE ---
+// --- PRIVACY AND REQUESTS MANAGEMENT ---
 function togglePrivacy() {
     isPrivate = document.getElementById('privacy-toggle').checked;
     localStorage.setItem('p2p_isPrivate', isPrivate);
     renderRequests();
-    showToast(isPrivate ? "Account reso Privato" : "Account reso Pubblico");
+    
+    renderFollowers(); // <-- Added to hide/show list in real-time
+    
+    showToast(isPrivate ? "Account made Private" : "Account made Public");
 }
 
 function acceptRequest(username) {
-    // 1. Lo rimuovo dalle richieste in sospeso
+    // 1. Remove from pending requests
     followRequests = followRequests.filter(u => u !== username);
     localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
     
-    // 2. Lo aggiungo alla Whitelist
+    // 2. Add to Whitelist
     if (!allowedFollowers.includes(username)) {
         allowedFollowers.push(username);
         localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
@@ -585,15 +587,15 @@ function acceptRequest(username) {
     
     renderRequests();
     renderFollowers();
-    showToast(`Hai accettato @${username}`);
+    showToast(`You accepted @${username}`);
 
-    // 3. Forzo la NOTIFICA di accettazione sulla rete e invio la foto
+    // 3. Force acceptance NOTIFICATION on network and send photo
     const conn = peer.connect(username);
     conn.on('open', () => {
-        // Dico all'amico di togliere il badge giallo "In attesa"
+        // Tell friend to remove yellow "Pending" badge
         conn.send({ type: 'follow_accepted', sender: myUsername });
         
-        // Se ho una foto, gliela invio subito!
+        // If I have a photo, send it immediately!
         const validPhoto = getValidPhoto();
         if (validPhoto) {
             conn.send({ type: 'photo', sender: myUsername, timestamp: Date.now(), image: validPhoto });
@@ -606,7 +608,7 @@ function declineRequest(username) {
     localStorage.setItem('p2p_requests', JSON.stringify(followRequests));
     renderRequests();
     
-    // Mando la NOTIFICA di rifiuto all'utente (lo farà sparire dalla sua lista)
+    // Send decline NOTIFICATION to user (removes us from their list)
     const conn = peer.connect(username);
     conn.on('open', () => {
         conn.send({ type: 'follow_declined', sender: myUsername });
@@ -617,7 +619,7 @@ function renderRequests() {
     const section = document.getElementById('requests-section');
     const list = document.getElementById('requests-list');
     
-    // Imposta lo stato iniziale del bottone toggle
+    // Set initial state of toggle button
     const toggleBtn = document.getElementById('privacy-toggle');
     if (toggleBtn) toggleBtn.checked = isPrivate;
 
@@ -635,39 +637,39 @@ function renderRequests() {
         div.innerHTML = `
             <span class="font-semibold text-sm text-gray-800">@${req}</span>
             <div class="flex gap-2">
-                <button onclick="acceptRequest('${req}')" class="bg-black text-white px-3 py-1 rounded-lg text-xs font-bold transition">Accetta</button>
-                <button onclick="declineRequest('${req}')" class="text-gray-500 hover:text-red-500 px-2 py-1 text-xs font-bold transition">Rifiuta</button>
+                <button onclick="acceptRequest('${req}')" class="bg-black text-white px-3 py-1 rounded-lg text-xs font-bold transition">Accept</button>
+                <button onclick="declineRequest('${req}')" class="text-gray-500 hover:text-red-500 px-2 py-1 text-xs font-bold transition">Decline</button>
             </div>
         `;
         list.appendChild(div);
     });
 }
 
-// --- GESTIONE FOLLOWER (CHI MI SEGUE) ---
+// --- FOLLOWERS MANAGEMENT (WHO FOLLOWS ME) ---
 function removeFollower(username) {
-    // Rimuovo l'utente dalla mia whitelist (non riceverà più le mie foto)
+    // Remove user from whitelist (won't receive photos anymore)
     allowedFollowers = allowedFollowers.filter(u => u !== username);
     localStorage.setItem('p2p_allowed', JSON.stringify(allowedFollowers));
     
     renderFollowers();
-    showToast(`Hai rimosso @${username} dai tuoi follower.`);
+    showToast(`Removed @${username} from your followers.`);
 }
 
 function renderFollowers() {
     const section = document.getElementById('allowed-section');
     const list = document.getElementById('followers-list');
     
-    // 1. Se l'account è pubblico, nascondi l'intera sezione e fermati
+    // 1. If public account, hide entire section and stop
     if (!isPrivate) {
         if (section) section.classList.add('hidden');
         return;
     }
     
-    // 2. Se l'account è privato, mostra la sezione
+    // 2. If private account, show section
     if (section) section.classList.remove('hidden');
     
     if (allowedFollowers.length === 0) {
-        list.innerHTML = `<p class="text-sm text-gray-400">Nessuno è attualmente autorizzato a vedere le tue foto.</p>`;
+        list.innerHTML = `<p class="text-sm text-gray-400">No one is currently authorized to see your photos.</p>`;
         return;
     }
     
@@ -677,18 +679,8 @@ function renderFollowers() {
         div.className = "flex justify-between items-center bg-blue-50 px-4 py-3 rounded-xl border border-blue-100";
         div.innerHTML = `
             <span class="font-semibold text-sm text-gray-800">@${follower}</span>
-            <button onclick="removeFollower('${follower}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Rimuovi</button>
+            <button onclick="removeFollower('${follower}')" class="text-red-500 hover:text-red-700 text-xs font-bold transition">Remove</button>
         `;
         list.appendChild(div);
     });
-}
-
-function togglePrivacy() {
-    isPrivate = document.getElementById('privacy-toggle').checked;
-    localStorage.setItem('p2p_isPrivate', isPrivate);
-    
-    renderRequests();
-    renderFollowers(); // <-- Aggiunto per nascondere/mostrare la lista in tempo reale
-    
-    showToast(isPrivate ? "Account reso Privato" : "Account reso Pubblico");
 }
